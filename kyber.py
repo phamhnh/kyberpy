@@ -1,8 +1,8 @@
 import os
 from hashlib import sha3_256, sha3_512, shake_128, shake_256
-from polynomials import *
-from modules import *
-from ntt_helper import NTTHelperKyber
+from .polynomials import *
+from .modules import *
+from .ntt_helper import NTTHelperKyber
 try:
     from aes256_ctr_drbg import AES256_CTR_DRBG
 except ImportError as e:
@@ -157,7 +157,7 @@ class Kyber:
             A.append(row)
         return self.M(A)
         
-    def _cpapke_keygen(self):
+    def _cpapke_keygen(self, d):
         """
         Algorithm 4 (Key Generation)
         https://pq-crystals.org/kyber/data/kyber-specification-round3-20210804.pdf
@@ -169,7 +169,7 @@ class Kyber:
             Public Key (12*k*n) / 8 + 32 bytes
         """
         # Generate random value, hash and split
-        d = self.random_bytes(32)
+        # d = self.random_bytes(32)
         rho, sigma = self._g(d)
         # Set counter for PRF
         N = 0
@@ -274,7 +274,7 @@ class Kyber:
         # Return message as bytes
         return m.compress(1).encode(l=1)
     
-    def keygen(self):
+    def keygen(self, z):
         """
         Algorithm 7 (CCA KEM KeyGen)
         https://pq-crystals.org/kyber/data/kyber-specification-round3-20210804.pdf
@@ -288,14 +288,14 @@ class Kyber:
         # pk, sk, the implementation does it this
         # way around, which matters for deterministic
         # randomness...
-        pk, _sk = self._cpapke_keygen()
-        z = self.random_bytes(32)
+        pk, _sk = self._cpapke_keygen(z)
         
         # sk = sk' || pk || H(pk) || z
-        sk = _sk + pk + self._h(pk) + z
+        # sk = _sk + pk + self._h(pk) + z
+        sk = _sk + pk + self._h(pk)
         return pk, sk
         
-    def enc(self, pk, key_length=32):
+    def enc(self, m, pk, key_length=32):
         """
         Algorithm 8 (CCA KEM Encapsulation)
         https://pq-crystals.org/kyber/data/kyber-specification-round3-20210804.pdf
@@ -306,7 +306,6 @@ class Kyber:
             c:  Ciphertext
             K:  Shared key
         """
-        m = self.random_bytes(32)
         m_hash = self._h(m)
         Kbar, r = self._g(m_hash + self._h(pk))
         c = self._cpapke_enc(pk, m_hash, r)
@@ -344,6 +343,76 @@ class Kyber:
             return self._kdf(_Kbar + self._h(c), key_length)
         # Decapsulation failed... return random value
         return self._kdf(z + self._h(c), key_length)
+    
+    def mlkem_keygen(self, z):
+        """
+        Algorithm 12 (CCA ML-KEM KeyGen)
+        https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.203.ipd.pdf
+        
+        Output:
+            pk: Public key
+            sk: Secret key
+            
+        """
+        # Note, although the paper gens z then
+        # pk, sk, the implementation does it this
+        # way around, which matters for deterministic
+        # randomness...
+        # z = self.random_bytes(64)
+        pk, _sk = self._cpapke_keygen(z[0:32])
+        
+        # sk = sk' || pk || H(pk) || z
+        # sk = _sk + pk + self._h(pk) + z
+        sk = _sk + pk + self._h(pk) + z[32:64]
+        return pk, sk
+        
+    def mlkem_enc(self, m, pk):
+        """
+        Algorithm 13 (CCA KEM Encapsulation)
+        https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.203.ipd.pdf
+        
+        Input: 
+            pk: Public Key
+        Output:
+            c:  Ciphertext
+            K:  Shared key
+        """
+        # m = self.random_bytes(32)
+        k, r = self._g(m + self._h(pk))
+        c = self._cpapke_enc(pk, m, r)
+        return c, k
+
+    def mlkem_dec(self, c, sk):
+        """
+        Algorithm 14 (CCA KEM Decapsulation)
+        https://pq-crystals.org/kyber/data/kyber-specification-round3-20210804.pdf
+        
+        Input: 
+            c:  ciphertext
+            sk: Secret Key
+        Output:
+            K:  Shared key
+        """
+        # Extract values from `sk`
+        # sk = _sk || pk || H(pk) || z
+        index = 12 * self.k * self.R.n // 8
+        _sk =  sk[:index]
+        pk = sk[index:-64]
+        hpk = sk[-64:-32]
+        z = sk[-32:]
+        
+        # Decrypt the ciphertext
+        _m = self._cpapke_dec(_sk, c)
+        
+        # Decapsulation
+        _k, _r = self._g(_m + hpk)
+        _c = self._cpapke_enc(pk, _m, _r)
+        _kbar = self._kdf(z + c, 32)
+        # if decapsulation was successful return K
+        if c == _c:
+            return _k
+        # Decapsulation failed... return random value
+        return _kbar
 
 # Initialise with default parameters for easy import
 Kyber512 = Kyber(DEFAULT_PARAMETERS["kyber_512"])

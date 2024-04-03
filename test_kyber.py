@@ -27,10 +27,10 @@ class TestKyber(unittest.TestCase):
 
     def generic_test_kyber(self, Kyber, count):
         for _ in range(count):
-            pk, sk = Kyber.keygen()
+            pk, sk = Kyber.mlkem_keygen()
             for _ in range(count):
-                c, key = Kyber.enc(pk)
-                _key = Kyber.dec(c, sk)
+                c, key = Kyber.mlkem_enc(pk)
+                _key = Kyber.mlkem_dec(c, sk)
                 self.assertEqual(key, _key)
     
     def test_kyber512(self):
@@ -61,7 +61,7 @@ class TestKyberDeterministic(unittest.TestCase):
         pk_output = []
         for _ in range(count):
             Kyber.set_drbg_seed(seed)
-            pk, sk = Kyber.keygen()
+            pk, sk = Kyber.mlkem_keygen()
             pk_output.append(pk + sk)
         self.assertEqual(len(pk_output), 5)
         self.assertEqual(len(set(pk_output)), 1)
@@ -72,11 +72,11 @@ class TestKyberDeterministic(unittest.TestCase):
         """
         key_output = []
         seed = os.urandom(48)
-        pk, sk = Kyber.keygen()
+        pk, sk = Kyber.mlkem_keygen()
         for _ in range(count):
             Kyber.set_drbg_seed(seed)
-            c, key = Kyber.enc(pk)
-            _key = Kyber.dec(c, sk)
+            c, key = Kyber.mlkem_enc(pk)
+            _key = Kyber.mlkem_dec(c, sk)
             # Check key derivation works
             self.assertEqual(key, _key)
             key_output.append(c + key)
@@ -106,7 +106,7 @@ class TestKnownTestValuesDRBG(unittest.TestCase):
         entropy_input = bytes([i for i in range(48)])
         rng = AES256_CTR_DRBG(entropy_input)
         
-        with open("assets/PQCkemKAT_1632.rsp") as f:
+        with open("assets/PQCmlkemKAT_1632.rsp") as f:
             # extract data from KAT
             kat_data_512 = f.read()
             parsed_data = parse_kat_data(kat_data_512)
@@ -128,27 +128,27 @@ class TestKnownTestValues(unittest.TestCase):
                 Kyber.set_drbg_seed(seed)
                 
                 # Assert keygen matches
-                _pk, _sk = Kyber.keygen()
+                _pk, _sk = Kyber.mlkem_keygen()
                 self.assertEqual(pk, _pk)
                 self.assertEqual(sk, _sk)
                 
                 # Assert encapsulation matches
-                _ct, _ss = Kyber.enc(_pk)
+                _ct, _ss = Kyber.mlkem_enc(_pk)
                 self.assertEqual(ct, _ct)
                 self.assertEqual(ss, _ss)
                 
                 # Assert decapsulation matches
-                __ss = Kyber.dec(ct, sk)
+                __ss = Kyber.mlkem_dec(ct, sk)
                 self.assertEqual(ss, __ss)
                 
     def test_kyber512_known_answer(self):
-        return self.generic_test_kyber_known_answer(Kyber512, "assets/PQCkemKAT_1632.rsp")
+        return self.generic_test_kyber_known_answer(Kyber512, "assets/PQCmlkemKAT_1632.rsp")
         
     def test_kyber768_known_answer(self):
-        return self.generic_test_kyber_known_answer(Kyber768, "assets/PQCkemKAT_2400.rsp")
+        return self.generic_test_kyber_known_answer(Kyber768, "assets/PQCmlkemKAT_2400.rsp")
         
     def test_kyber1024_known_answer(self):
-        return self.generic_test_kyber_known_answer(Kyber1024, "assets/PQCkemKAT_3168.rsp")
+        return self.generic_test_kyber_known_answer(Kyber1024, "assets/PQCmlkemKAT_3168.rsp")
 
 if __name__ == '__main__':
     unittest.main()
